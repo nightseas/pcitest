@@ -56,7 +56,6 @@ void fill_random(uint32_t *buf, uint32_t len) {
   }
 }
 
-static char state1[32];
 
 int main(int argc, char **argv) {
   int fd;
@@ -99,7 +98,7 @@ int main(int argc, char **argv) {
 
   map_base = mmap(0, MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_32BIT, fd, target & ~MAP_MASK);
   if(map_base == (void *) -1) PRINT_ERROR;
-  printf("PCI Memory mapped to address 0x%08x.\nTest pattern size: %dKiB\n\n", map_base, MAP_SIZE );
+  printf("PCI Memory mapped to address 0x%08lX.\nTest pattern size: %dKiB\n\n", (unsigned long) map_base, MAP_SIZE );
   fflush(stdout);
 
   virt_addr = map_base + (target & MAP_MASK);
