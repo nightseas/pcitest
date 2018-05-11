@@ -43,7 +43,7 @@
 		__LINE__, __FILE__, errno, strerror(errno)); exit(1); \
 	} while(0)
 
-#define MAP_SIZE (512 * 1024 * 1024)
+#define MAP_SIZE (4 * 1024)
 #define MAP_MASK (MAP_SIZE - 1)
 
 struct tms *tms_buf;
@@ -99,40 +99,47 @@ int main(int argc, char **argv) {
 
   map_base = mmap(0, MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_32BIT, fd, target & ~MAP_MASK);
   if(map_base == (void *) -1) PRINT_ERROR;
-  printf("PCI Memory mapped to address 0x%08x.\n", map_base);
+  printf("PCI Memory mapped to address 0x%08x.\nTest pattern size: %dKiB\n\n", map_base, MAP_SIZE );
   fflush(stdout);
 
   virt_addr = map_base + (target & MAP_MASK);
 
-  int i, errors;
+  int interations, errors;
   int cmp;
   lastime = times(tms_buf);
-  i = 0;
+  interations = 0;
   errors = 0;
-  //  for( i = 0; i < 10; i++ ) {
-  while(1) {
-    printf( "iteration: %d, errors: %d\n", i, errors);
+  for( int loop = 0; loop < 10; loop++ ) {
+  //while(1) {
+    printf( "iteration: %d, errors: %d\n", interations, errors);
+    //printf( "Generating random data to memory 2...\n");
     fill_random(shadow_ram, MAP_SIZE / sizeof(uint32_t));
+    //printf( "Copy data from PCIe to local memory 1...\n");
     lastime = times(tms_buf);
-    memcpy( local_ram, virt_addr, MAP_SIZE );  // copy first to local
+    for( int i = 0; i < 1024; i++ )
+        memcpy( local_ram, virt_addr, MAP_SIZE );  // copy first to local
     elapsed = ((double) times(tms_buf) - (double) lastime) / (double) sysconf(_SC_CLK_TCK);
-    printf( "PCI->local RAM elapsed: %lfs, bandwidth: %lfMiB\n", elapsed, ((double)MAP_SIZE / elapsed) / (1024 * 1024) );
-    printf( "Initial compare: %d\n", memcmp( shadow_ram, local_ram, MAP_SIZE ) );
+    printf( "PCI->local RAM elapsed: %lfs, bandwidth: %lfMiB\n", elapsed, ((double)MAP_SIZE / elapsed) / (1024) );
+    //printf( "Initial compare, likely to be non-zero: %d\n", memcmp( shadow_ram, local_ram, MAP_SIZE ) );
     
+    //printf( "Copy data from local memory 2 to PCIe...\n");
     lastime = times(tms_buf);
-    memcpy( virt_addr, shadow_ram, MAP_SIZE );  // copy shadow to PCIe
+    for( int i = 0; i < 1024; i++ )
+        memcpy( virt_addr, shadow_ram, MAP_SIZE );  // copy shadow to PCIe
     elapsed = ((double) times(tms_buf) - (double) lastime) / (double) sysconf(_SC_CLK_TCK);
-    printf( "local RAM->PCI elapsed: %lfs, bandwidth: %lfMiB\n", elapsed, ((double)MAP_SIZE / elapsed) / (1024 * 1024) );
+    printf( "local RAM->PCI elapsed: %lfs, bandwidth: %lfMiB\n", elapsed, ((double)MAP_SIZE / elapsed) / (1024) );
     
     memcpy( local_ram, virt_addr, MAP_SIZE );  // copy first to local
     cmp = memcmp( shadow_ram, local_ram, MAP_SIZE );
-    printf( "After-copy compare: %d\n", cmp );
+    //printf( "After-copy compare, should be zero: %d\n", cmp );
     if( cmp != 0 ) {
       printf( "****ERROR FOUND****\n" );
       errors++;
     }
-    i++;
+    interations++;
   }
+
+  printf("\n\n===== Test Resault =====\nTested: %d\nPassed: %d\nFailed: %d\n", interations, interations - errors, errors );
     
   if(munmap(map_base, MAP_SIZE) == -1) PRINT_ERROR;
   free(shadow_ram);

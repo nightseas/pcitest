@@ -47,10 +47,11 @@
 int main(int argc, char **argv) {
 	int fd;
 	void *map_base, *virt_addr;
-	uint32_t read_result, writeval;
+	uint64_t read_result, writeval;
 	char *filename;
 	off_t target;
 	int access_type = 'w';
+	int type_width;
 
 	if(argc < 3) {
 		// pcimem /sys/bus/pci/devices/0001\:00\:07.0/resource0 0x100 w 0x00
@@ -58,7 +59,7 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "\nUsage:\t%s { sys file } { offset } [ type [ data ] ]\n"
 			"\tsys file: sysfs file for the pci resource to act on\n"
 			"\toffset  : offset into pci memory region to act upon\n"
-			"\ttype    : access operation type : [b]yte, [h]alfword, [w]ord\n"
+			"\ttype    : access operation type : [b]yte, [h]alfword, [w]ord, [d]ouble-word\n"
 			"\tdata    : data to be written\n\n",
 			argv[0]);
 		exit(1);
@@ -71,36 +72,44 @@ int main(int argc, char **argv) {
 
     if((fd = open(filename, O_RDWR | O_SYNC)) == -1) PRINT_ERROR;
     printf("%s opened.\n", filename);
-    printf("Target offset is 0x%x, page size is %d\n", target, sysconf(_SC_PAGE_SIZE));
+    printf("Target offset is 0x%x, page size is %ld\n", (int) target, sysconf(_SC_PAGE_SIZE));
     fflush(stdout);
 
     /* Map one page */
-    printf("mmap(%d, %d, 0x%x, 0x%x, %d, 0x%x)\n", 0, MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, target);
+    printf("mmap(%d, %ld, 0x%x, 0x%x, %d, 0x%x)\n", 0, MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, (int) target);
     map_base = mmap(0, MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, target & ~MAP_MASK);
     if(map_base == (void *) -1) PRINT_ERROR;
-    printf("PCI Memory mapped to address 0x%08x.\n", map_base);
+    printf("PCI Memory mapped to address 0x%08lx.\n", (unsigned long) map_base);
     fflush(stdout);
 
     virt_addr = map_base + (target & MAP_MASK);
     switch(access_type) {
 		case 'b':
 			read_result = *((uint8_t *) virt_addr);
+			type_width = 2;
 			break;
 		case 'h':
 			read_result = *((uint16_t *) virt_addr);
+			type_width = 4;
 			break;
 		case 'w':
 			read_result = *((uint32_t *) virt_addr);
+			type_width = 8;
+			break;
+                case 'd':
+			read_result = *((uint64_t *) virt_addr);
+			type_width = 16;
 			break;
 		default:
 			fprintf(stderr, "Illegal data type '%c'.\n", access_type);
 			exit(2);
 	}
-    printf("Value at offset 0x%X (%p): 0x%X\n", target, virt_addr, read_result);
+    printf("Value at offset 0x%X (%p): 0x%0*lX\n", (int) target, virt_addr, type_width,
+	   read_result);
     fflush(stdout);
 
 	if(argc > 4) {
-		writeval = strtoul(argv[4], 0, 0);
+		writeval = strtoull(argv[4], NULL, 0);
 		switch(access_type) {
 			case 'b':
 				*((uint8_t *) virt_addr) = writeval;
@@ -114,8 +123,13 @@ int main(int argc, char **argv) {
 				*((uint32_t *) virt_addr) = writeval;
 				read_result = *((uint32_t *) virt_addr);
 				break;
+			case 'd':
+				*((uint64_t *) virt_addr) = writeval;
+				read_result = *((uint64_t *) virt_addr);
+				break;
 		}
-		printf("Written 0x%X; readback 0x%X\n", writeval, read_result);
+		printf("Written 0x%0*lX; readback 0x%*lX\n", type_width,
+		       writeval, type_width, read_result);
 		fflush(stdout);
 	}
 
